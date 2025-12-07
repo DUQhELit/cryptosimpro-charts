@@ -1,93 +1,10 @@
-<!DOCTYPE html> <html lang="en"> <head> <meta charset="UTF-8"> <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no"> <title>Crypto Chart</title><script src="https://unpkg.com/lightweight-charts/dist/lightweight-charts.standalone.production.js"></script>
-
-<style>
-    body, html {
-        margin: 0;
-        padding: 0;
-        width: 100%;
-        height: 100%;
-        background-color: #1a1a1a;
-        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-        color: #ffffff;
-        overflow: hidden;
-    }
-
-    .container {
-        display: flex;
-        flex-direction: column;
-        height: 100vh;
-    }
-
-    .header {
-        display: flex;
-        align-items: center;
-        padding: 10px 15px;
-        height: 50px;
-        background-color: #222;
-        border-bottom: 1px solid #333;
-        box-sizing: border-box;
-        flex-shrink: 0;
-    }
-
-    .token-info {
-        display: flex;
-        align-items: center;
-    }
-
-    #tokenIcon {
-        width: 28px;
-        height: 28px;
-        border-radius: 50%;
-        margin-right: 10px;
-        object-fit: cover;
-        background-color: #333;
-    }
-
-    .text-group {
-        display: flex;
-        flex-direction: column;
-        justify-content: center;
-    }
-
-    #tokenSymbol {
-        font-weight: 700;
-        font-size: 14px;
-        line-height: 1.1;
-        text-transform: uppercase;
-    }
-
-    #tokenPrice {
-        font-size: 12px;
-        color: #00ff88;
-        margin-top: 2px;
-    }
-
-    #chartContainer {
-        width: 100%;
-        flex-grow: 1;
-        position: relative;
-    }
-</style></head> <body><div class="container">
-    <div class="header">
-        <div class="token-info">
-            <img id="tokenIcon" src="https://i.imgur.com/vLda3fU.png" alt="Icon" onerror="this.src='https://i.imgur.com/vLda3fU.png';">
-            <div class="text-group">
-                <span id="tokenSymbol">LOADING...</span>
-                <span id="tokenPrice">$--.--</span>
-            </div>
-        </div>
-    </div>
-
-    <div id="chartContainer"></div>
-</div>
-
 <script>
-    // 1. Get Symbol from URL (Default to BTC)
+    // 1) Symbol from URL (default BTC)
     const urlParams = new URLSearchParams(window.location.search);
     const symbolRaw = urlParams.get('symbol') || 'BTC';
     const symbol = symbolRaw.toUpperCase();
 
-    // 2. Setup UI Elements
+    // 2) UI elements
     const iconEl = document.getElementById('tokenIcon');
     const symbolEl = document.getElementById('tokenSymbol');
     const priceEl = document.getElementById('tokenPrice');
@@ -96,85 +13,66 @@
     symbolEl.innerText = symbol;
     iconEl.src = `https://assets.coincap.io/assets/icons/${symbol.toLowerCase()}@2x.png`;
 
-    // 3. Create Chart
+    // 3) Chart (white background, green line/fill)
     const chart = LightweightCharts.createChart(container, {
         layout: {
-            background: { color: '#1a1a1a' },
-            textColor: '#d1d4dc',
+            background: { color: '#ffffff' },
+            textColor: '#222222',
         },
         grid: {
             vertLines: { visible: false },
-            horzLines: { color: '#2B2B43', style: 2 },
+            horzLines: { color: '#e6e6e6', style: 1 },
         },
-        rightPriceScale: {
-            borderVisible: false,
-        },
-        timeScale: {
-            timeVisible: true,
-            secondsVisible: false,
-            borderVisible: false,
-        },
-        crosshair: {
-            vertLine: { labelVisible: false },
-        },
+        rightPriceScale: { borderVisible: false },
+        timeScale: { timeVisible: true, secondsVisible: false, borderVisible: false },
+        crosshair: { vertLine: { labelVisible: false } },
     });
 
     const areaSeries = chart.addAreaSeries({
-        lineColor: '#2962FF',
-        topColor: 'rgba(41, 98, 255, 0.4)',
-        bottomColor: 'rgba(41, 98, 255, 0.0)',
+        lineColor: '#00C853',                    // green line
+        topColor: 'rgba(0, 200, 83, 0.35)',      // green fill
+        bottomColor: 'rgba(0, 200, 83, 0.00)',
         lineWidth: 2,
     });
 
     const resizeObserver = new ResizeObserver(entries => {
-        if (entries.length === 0 || entries[0].target !== container) { return; }
-        const newRect = entries[0].contentRect;
-        chart.applyOptions({ width: newRect.width, height: newRect.height });
+        if (!entries.length || entries[0].target !== container) return;
+        const { width, height } = entries[0].contentRect;
+        chart.applyOptions({ width, height });
     });
     resizeObserver.observe(container);
 
-    // 4. DATA FETCHING (Using your Hostinger PHP Proxy)
+    // 4) Data fetch via your PHP proxy
     async function loadData() {
         try {
-            // --- IMPORTANT: Replace with YOUR ACTUAL PHP PROXY URL ---
-            const PHP_PROXY_URL = "https://tradesimulator.io/api/chart-proxy.php"; 
-            // ------------------------------------------------------
-            
+            const PHP_PROXY_URL = "https://tradesimulator.io/api/chart-proxy.php"; // your proxy
             const response = await fetch(`${PHP_PROXY_URL}?symbol=${symbol}`);
-            
-            if (!response.ok) {
-                const errorJson = await response.json();
-                throw new Error(`Proxy Error: ${response.status} - ${errorJson.error || response.statusText}`);
-            }
+            if (!response.ok) throw new Error(`Proxy Error: ${response.status}`);
 
             const rawData = await response.json();
 
-            // Check for CryptoCompare specific error message
             if (rawData.Response === 'Error') {
                 throw new Error(`CryptoCompare API Error: ${rawData.Message}`);
             }
 
-            // CryptoCompare historical data is in `Data.Data` array
-            const chartData = rawData.Data.Data.map(d => ({
-                time: d.time,       // Unix timestamp in seconds (already correct)
-                value: d.close      // Close price
-            }));
+            // Handle both shapes: Data.Data (CryptoCompare raw) or Data (array)
+            const rows = (rawData.Data && rawData.Data.Data) ? rawData.Data.Data :
+                         Array.isArray(rawData.Data) ? rawData.Data : [];
+            const chartData = rows.map(d => ({ time: d.time, value: d.close }));
 
-            // Update Chart
             areaSeries.setData(chartData);
             chart.timeScale().fitContent();
 
-            // Update Price Text
-            const lastPrice = chartData.length > 0 ? chartData[chartData.length - 1].value : 0;
-            const decimals = lastPrice < 1.0 ? 4 : 2;
+            const lastPrice = chartData.length ? chartData[chartData.length - 1].value : 0;
+            const decimals = lastPrice < 1 ? 4 : 2;
             priceEl.innerText = `$${lastPrice.toFixed(decimals)}`;
-
-        } catch (error) {
-            console.error("Data Load Failed:", error);
+            priceEl.style.color = '#00C853';
+        } catch (err) {
+            console.error("Data Load Failed:", err);
             priceEl.innerText = "N/A";
             priceEl.style.color = "orange";
         }
     }
 
     loadData();
-</script></body> </html>
+</script>
